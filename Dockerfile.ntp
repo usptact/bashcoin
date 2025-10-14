@@ -1,0 +1,14 @@
+# Dockerfile for NTP Server
+FROM alpine:latest
+
+# Install NTP server
+RUN apk add --no-cache openntpd
+
+# Configure NTP server
+RUN echo "listen on *" > /etc/ntpd.conf && \
+    echo "servers pool.ntp.org" >> /etc/ntpd.conf
+
+EXPOSE 123/udp
+
+CMD ["/usr/sbin/ntpd", "-d", "-s"]
+

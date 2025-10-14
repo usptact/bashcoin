@@ -1,0 +1,30 @@
+# .dockerignore for BashCoin
+
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Documentation (not needed in containers)
+*.md
+LICENSE
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.log
+*.tmp
+
+# Development files
+Makefile
+docker-compose.yml
+

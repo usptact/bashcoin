@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  # NTP Server
+  ntp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.ntp
+    container_name: bashcoin-ntp
+    hostname: ntp-server
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.10
+    ports:
+      - "123:123/udp"
+    cap_add:
+      - SYS_TIME
+      - SYS_NICE
+
+  # Ledger Node 1
+  node1:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node1
+    hostname: node1
+    environment:
+      - NODE_ID=node1
+      - NTP_SERVER=172.25.0.10
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.11
+    volumes:
+      - node1-data:/data
+      - node1-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
+  # Ledger Node 2
+  node2:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node2
+    hostname: node2
+    environment:
+      - NODE_ID=node2
+      - NTP_SERVER=172.25.0.10
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.12
+    volumes:
+      - node2-data:/data
+      - node2-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
+  # Ledger Node 3
+  node3:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node3
+    hostname: node3
+    environment:
+      - NODE_ID=node3
+      - NTP_SERVER=172.25.0.10
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.13
+    volumes:
+      - node3-data:/data
+      - node3-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
+  # Ledger Node 4
+  node4:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node4
+    hostname: node4
+    environment:
+      - NODE_ID=node4
+      - NTP_SERVER=172.25.0.10
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.14
+    volumes:
+      - node4-data:/data
+      - node4-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
+  # Ledger Node 5
+  node5:
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node5
+    hostname: node5
+    environment:
+      - NODE_ID=node5
+      - NTP_SERVER=172.25.0.10
+    networks:
+      bashcoin-network:
+        ipv4_address: 172.25.0.15
+    volumes:
+      - node5-data:/data
+      - node5-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
+networks:
+  bashcoin-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+volumes:
+  node1-data:
+  node1-keys:
+  node2-data:
+  node2-keys:
+  node3-data:
+  node3-keys:
+  node4-data:
+  node4-keys:
+  node5-data:
+  node5-keys:
+

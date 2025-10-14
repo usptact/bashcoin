@@ -1,0 +1,38 @@
+# BashCoin .gitignore
+
+# Ignore Docker volumes and data
+data/
+*.json
+*.jsonl
+
+# Ignore GPG keys
+*.gpg
+*.key
+*.asc
+.gnupg/
+
+# Ignore SSH keys
+*.pub
+*.pem
+id_rsa*
+
+# Ignore logs
+*.log
+
+# Ignore temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+*.swo
+*~
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
+
+# Ignore editor files
+.vscode/
+.idea/
+*.sublime-*
+

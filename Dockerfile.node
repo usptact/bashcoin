@@ -1,0 +1,56 @@
+# Dockerfile for BashCoin Ledger Nodes
+FROM alpine:latest
+
+# Install required packages
+RUN apk add --no-cache \
+    bash \
+    rsync \
+    jq \
+    gnupg \
+    openssh \
+    openntpd \
+    coreutils \
+    curl \
+    netcat-openbsd \
+    procps
+
+# Create necessary directories
+RUN mkdir -p /data/ledger \
+    /data/pending \
+    /data/keys \
+    /scripts \
+    /root/.ssh \
+    /var/run/sshd
+
+# Configure SSH
+RUN ssh-keygen -A
+RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+RUN echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
+RUN echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
+
+# Copy scripts
+COPY scripts/init-node.sh /scripts/
+COPY scripts/ledger-daemon.sh /scripts/
+COPY scripts/create-transaction.sh /scripts/
+COPY scripts/validate-transaction.sh /scripts/
+COPY scripts/sync-ledger.sh /scripts/
+COPY scripts/broadcast.sh /scripts/
+COPY scripts/consensus.sh /scripts/
+COPY scripts/fix-ledger.sh /scripts/
+COPY scripts/import-keys.sh /scripts/
+COPY scripts/entrypoint.sh /scripts/
+
+# Make scripts executable
+RUN chmod +x /scripts/*.sh
+
+# Expose SSH port for rsync
+EXPOSE 22
+
+# Expose port for transaction broadcasting
+EXPOSE 9000/tcp
+EXPOSE 9000/udp
+
+WORKDIR /data
+
+ENTRYPOINT ["/scripts/entrypoint.sh"]
+
