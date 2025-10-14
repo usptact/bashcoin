@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="logo.png" alt="BashCoin Logo" width="250"/>
+</div>
+
 # BashCoin Project Summary
 
 ## What is BashCoin?

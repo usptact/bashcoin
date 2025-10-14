@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="logo.png" alt="BashCoin Logo" width="200"/>
+</div>
+
 # BashCoin - Quick Start Guide
 
 Get up and running with BashCoin in 5 minutes!

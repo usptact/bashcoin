@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="logo.png" alt="BashCoin Logo" width="300"/>
+</div>
+
 # BashCoin - Distributed Ledger System
 
 A distributed ledger implementation using Docker containers, Alpine Linux, and standard Linux command-line tools (Bash, rsync, jq, GPG).
