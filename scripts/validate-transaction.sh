@@ -91,29 +91,36 @@ if [ "${TX_HASH}" != "${EXPECTED_HASH}" ]; then
     exit 1
 fi
 
-# Check for double spending - verify nonce is unique
-if grep -q "\"nonce\": \"${NONCE}\"" "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null; then
+# Check for double spending - verify nonce is unique.
+# NOTE: the ledger is stored as compact JSONL (jq -c, no spaces), so we must
+# match with jq rather than a spaced grep pattern which would never match.
+if [ -f "${LEDGER_DIR}/transactions.jsonl" ] && \
+   [ -n "$(jq -r --arg n "${NONCE}" 'select(.nonce == $n) | .nonce' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
     echo "Error: Duplicate nonce detected (double spending attempt)"
     exit 1
 fi
 
-# Verify signature
-echo "${SIGNATURE}" | base64 -d > /tmp/sig_${TX_HASH}.asc 2>/dev/null
-if gpg --verify /tmp/sig_${TX_HASH}.asc 2>&1 | grep -q "Good signature from \"${FROM}"; then
+# Verify signature.
+# The signature is a *detached* GPG signature over the transaction hash, so we
+# verify it against the exact TX_HASH. This binds the signature to this specific
+# transaction (the hash itself is bound to from|to|amount|nonce|timestamp and was
+# verified above). A signature over any other payload will fail here.
+SIG_FILE="/tmp/sig_${TX_HASH}.asc"
+DATA_FILE="/tmp/data_${TX_HASH}.txt"
+echo "${SIGNATURE}" | base64 -d > "${SIG_FILE}" 2>/dev/null
+printf '%s' "${TX_HASH}" > "${DATA_FILE}"
+
+if gpg --verify "${SIG_FILE}" "${DATA_FILE}" 2>&1 | grep -q "Good signature from \"${FROM} "; then
     echo "Signature verified"
 else
-    # Try to verify with email format
-    if echo -n "${TX_HASH}" | gpg --verify /tmp/sig_${TX_HASH}.asc - 2>&1 | grep -q "${FROM}"; then
-        echo "Signature verified"
-    else
-        echo "Error: Invalid signature"
-        rm -f /tmp/sig_${TX_HASH}.asc
-        exit 1
-    fi
+    echo "Error: Invalid signature"
+    rm -f "${SIG_FILE}" "${DATA_FILE}"
+    exit 1
 fi
-rm -f /tmp/sig_${TX_HASH}.asc
+rm -f "${SIG_FILE}" "${DATA_FILE}"
 
-# Check sender balance (recalculate first)
+# Pre-check sender balance (advisory, fast fail). The authoritative check is
+# performed again inside the locked critical section below to avoid TOCTOU races.
 /scripts/consensus.sh calculate > /dev/null 2>&1
 
 if [ -f "${LEDGER_DIR}/balances.json" ]; then
@@ -130,22 +137,49 @@ fi
 # All validations passed
 echo "Transaction validation successful!"
 
-# Add to ledger if requested
+# Add to ledger if requested.
+#
+# The whole "check nonce -> check balance -> append -> recompute balances" must
+# be atomic: we hold an exclusive ledger lock for the entire critical section so
+# no concurrent transaction can be admitted between the balance check and the
+# append (which would otherwise allow a double-spend). consensus.sh uses a
+# separate balances lock, so calling it here does not deadlock on this lock.
 if [ "$ADD_TO_LEDGER" == "true" ]; then
     echo "Adding transaction to ledger..."
-    
-    # Append to ledger with lock (ensure compact JSON format)
+
     (
         flock -x 200
+
+        # Re-check for duplicate nonce under lock.
+        if [ -n "$(jq -r --arg n "${NONCE}" 'select(.nonce == $n) | .nonce' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
+            echo "Error: Duplicate nonce detected under lock (double spending attempt)"
+            exit 10
+        fi
+
+        # Re-check balance under lock (authoritative).
+        /scripts/consensus.sh calculate > /dev/null 2>&1
+        SENDER_BALANCE=$(jq -r ".\"${FROM}\" // 0" "${LEDGER_DIR}/balances.json" 2>/dev/null)
+        if (( $(echo "${SENDER_BALANCE:-0} < ${AMOUNT}" | bc -l) )); then
+            echo "Error: Insufficient balance under lock. ${FROM} has ${SENDER_BALANCE}, needs ${AMOUNT}"
+            exit 11
+        fi
+
+        # Append to ledger (ensure compact JSONL format).
         jq -c . "${TX_FILE}" >> "${LEDGER_DIR}/transactions.jsonl"
+
+        # Recompute balances to reflect the newly committed transaction.
+        /scripts/consensus.sh calculate > /dev/null 2>&1
     ) 200>/var/lock/ledger.lock
-    
-    # Update balances
-    /scripts/consensus.sh calculate > /dev/null 2>&1
-    
-    # Remove from pending if it's there
+    LOCK_RC=$?
+
+    # Always drop the pending copy for this tx.
     rm -f "${PENDING_DIR}/tx_${TX_HASH}.json"
-    
+
+    if [ "${LOCK_RC}" -ne 0 ]; then
+        echo "Transaction rejected during atomic commit (code ${LOCK_RC})"
+        exit 1
+    fi
+
     echo "Transaction added to ledger"
 fi
 
