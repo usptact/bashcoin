@@ -51,6 +51,7 @@ bashcoin/
 │   ├── validate-transaction.sh # Validate incoming transactions
 │   ├── broadcast.sh           # Broadcast to all nodes
 │   ├── sync-ledger.sh         # Synchronize ledgers
+│   ├── join-network.sh        # Announce a runtime node-join
 │   └── consensus.sh           # Balance calculation
 │
 └── Documentation/

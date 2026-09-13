@@ -469,13 +469,55 @@ This is a proof-of-concept and has several limitations:
 
 ## Extending the System
 
-Network membership is defined in a single file, `config/nodes.json`. Adding a
-node is two edits plus a rebuild — you no longer edit the scripts.
+There are two ways to add a node, depending on whether it should be part of the
+initial (genesis) supply.
 
-**1. Add the node to `config/nodes.json`:**
+### Option A — Runtime join (no rebuild of existing nodes)
+
+A node whose id is **not** in `config/nodes.json` is a *runtime joiner*. On boot
+it announces itself with a self-signed `node-join` record (carrying its DNS host
+and public key) that is appended to the ledger and broadcast to the seed nodes.
+Existing nodes discover it from the ledger, import its key, and start routing to
+it — **no config edit or rebuild of the existing nodes is required**.
+
+Admission is controlled by `config/nodes.json` → `policy`:
+
+- `max_join_balance` (default **0**) caps the coins a join may mint. With `0`, a
+  joiner starts with nothing and must be funded by an existing holder — so the
+  genesis supply stays fixed and no one can mint themselves money.
+- `allowed_joiners` (default empty = open join) restricts which ids may join.
+- A join can never take over an existing member's id.
+
+A ready-to-run demo node (`node6`) ships behind a compose profile:
+
+```bash
+# Bring up the 5-node network
+docker-compose up -d
+
+# Start node6 as a runtime joiner (not a seed) — it auto-announces itself
+docker-compose --profile join-demo up -d --build node6
+# ...or: make join-demo
+
+# After ~15s, every node knows node6 (balance 0 until funded)
+docker exec -it bashcoin-node1 /scripts/consensus.sh stats
+
+# Fund the newcomer from an existing holder
+docker exec -it bashcoin-node1 /scripts/create-transaction.sh node6 100
+docker exec -it bashcoin-node6 /scripts/consensus.sh balance   # -> 100
+```
+
+> The container must be reachable by its `NODE_ID` as a DNS name — use a compose
+> service named `node6` (or set `--network-alias node6` with `docker run`).
+
+### Option B — Genesis seed member (part of the initial supply)
+
+To make a node part of the genesis set with an initial balance, add it to
+`config/nodes.json` **and** `docker-compose.yml`, then rebuild so every node
+shares the same seed config:
 
 ```json
 {
+  "policy": { "max_join_balance": 0, "allowed_joiners": [] },
   "nodes": [
     { "id": "node1", "host": "node1", "balance": 1000 },
     { "id": "node2", "host": "node2", "balance": 1000 },
@@ -486,12 +528,6 @@ node is two edits plus a rebuild — you no longer edit the scripts.
   ]
 }
 ```
-
-All scripts (broadcast, sync, key exchange) and the balance model read this file,
-so the peer list, host names, and initial balances all come from one place. The
-`host` is a Docker DNS name and must match the service name below.
-
-**2. Add the matching service to `docker-compose.yml`:**
 
 ```yaml
 node6:
@@ -512,16 +548,12 @@ node6:
     - ntp-server
 ```
 
-**3. Rebuild and restart** so every node picks up the new membership:
-
 ```bash
-docker-compose build
-docker-compose up -d
+docker-compose build && docker-compose up -d
 ```
 
 > Note: the `host` in `config/nodes.json` must match the service name in
-> `docker-compose.yml` for the same node (Docker DNS resolves it). No static
-> IP addresses are required.
+> `docker-compose.yml` (Docker DNS resolves it). No static IPs are required.
 
 ### Implementing New Transaction Types
 
