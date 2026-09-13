@@ -52,7 +52,7 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │  ┌────────────────▼─────────────────────────────┐  │
 │  │         init-node.sh                         │  │
 │  │  • Generate GPG keys                         │  │
-│  │  • Setup SSH                                 │  │
+│  │  • Start rsync daemon                        │  │
 │  │  • Initialize ledger                         │  │
 │  │  • Exchange public keys                      │  │
 │  └──────────────────────────────────────────────┘  │
@@ -60,14 +60,14 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │  ┌──────────────────────────────────────────────┐  │
 │  │    Daemon Layer (Background Services)        │  │
 │  │                                              │  │
-│  │  ┌────────────────┐  ┌──────────────────┐  │  │
-│  │  │ NTP Client     │  │ SSH Daemon       │  │  │
-│  │  │ (ntpd)         │  │ (sshd - port 22) │  │  │
-│  │  └────────────────┘  └──────────────────┘  │  │
+│  │  ┌────────────────┐                        │  │
+│  │  │ NTP Client     │                        │  │
+│  │  │ (ntpd)         │                        │  │
+│  │  └────────────────┘                        │  │
 │  │                                              │  │
 │  │  ┌────────────────┐  ┌──────────────────┐  │  │
 │  │  │ Rsync Daemon   │  │ Ledger Daemon    │  │  │
-│  │  │ (port 873)     │  │ (port 9000)      │  │  │
+│  │  │ (port 873)     │  │ (port 9000,socat)│  │  │
 │  │  └────────────────┘  └──────────────────┘  │  │
 │  └──────────────────────────────────────────────┘  │
 │                                                     │
@@ -187,12 +187,18 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 - **Signature**: Transaction hash signed with private key
 - **Verification**: Other nodes verify using public key
 
-```bash
-# Sign
-echo -n "${TX_HASH}" | gpg --armor --sign --local-user "${NODE_ID}@bashcoin.local"
+The signature is a **detached** signature over the transaction hash, so verifiers
+can bind it to the exact hash of the transaction being validated (the hash itself
+is bound to `from|to|amount|nonce|timestamp`). This prevents attaching a valid
+signature over one payload to a different transaction.
 
-# Verify
-gpg --verify signature_file
+```bash
+# Sign (detached signature over the hash)
+echo -n "${TX_HASH}" | gpg --armor --detach-sign --local-user "${NODE_ID}@bashcoin.local"
+
+# Verify against the exact hash
+printf '%s' "${TX_HASH}" > data.txt
+gpg --verify signature_file data.txt
 ```
 
 ### 2. Double-spending Prevention
@@ -202,9 +208,13 @@ gpg --verify signature_file
 NONCE=$(echo "${NODE_ID}-$(date +%s%N)-${RANDOM}" | sha256sum | cut -d' ' -f1)
 ```
 
-**Nonce Verification:**
+**Nonce Verification:** the ledger is compact JSONL, so uniqueness is checked
+with `jq` (a spaced `grep` pattern would never match). The check and the ledger
+append are performed together inside an exclusive `flock` critical section so
+concurrent transactions cannot race between the check and the commit.
 ```bash
-if grep -q "\"nonce\": \"${NONCE}\"" "${LEDGER_DIR}/transactions.jsonl"; then
+if [ -n "$(jq -r --arg n "${NONCE}" 'select(.nonce == $n) | .nonce' \
+        "${LEDGER_DIR}/transactions.jsonl" | head -n1)" ]; then
     echo "Duplicate nonce detected"
     exit 1
 fi
@@ -249,7 +259,7 @@ fi
     
 [pending]
     path = /data/pending
-    read only = no
+    read only = yes
 ```
 
 ### Sync Process
@@ -300,27 +310,20 @@ In case of conflicts:
 Used for transaction propagation:
 
 ```bash
-# Sender
+# Sender (broadcast.sh)
 cat transaction.json | nc ${NODE_IP} 9000
 
-# Receiver (ledger-daemon.sh)
-nc -l -p 9000 > incoming_tx.json
+# Receiver (ledger-daemon.sh) — a persistent, concurrent listener that forks a
+# handler per connection so broadcasts are not dropped while one is processed.
+socat -T 15 TCP-LISTEN:9000,reuseaddr,fork EXEC:"/scripts/ledger-daemon.sh --handle"
 ```
 
 ### Rsync (Port 873)
 
-Used for ledger synchronization:
+Used for ledger synchronization and public key sharing:
 
 ```bash
 rsync -az rsync://${NODE_IP}:873/ledger/transactions.jsonl local_copy.jsonl
-```
-
-### SSH (Port 22)
-
-Used for remote command execution and debugging:
-
-```bash
-ssh root@${NODE_IP} "/scripts/consensus.sh balance"
 ```
 
 ### NTP (Port 123 UDP)
@@ -347,7 +350,6 @@ ntpd -s -S /usr/sbin/ntpd
     └── tx_*.json             # Pending transactions
 
 /root/.gnupg/                 # GPG keyring
-/root/.ssh/                   # SSH keys
 /scripts/                     # Application scripts
 ```
 
