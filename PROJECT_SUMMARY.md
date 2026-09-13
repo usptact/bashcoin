@@ -41,7 +41,7 @@ bashcoin/
 │
 ├── scripts/                    # All bash scripts
 │   ├── entrypoint.sh          # Container initialization
-│   ├── init-node.sh           # Node setup (GPG, SSH, ledger)
+│   ├── init-node.sh           # Node setup (GPG, ledger, key exchange)
 │   ├── ledger-daemon.sh       # Transaction listener
 │   ├── create-transaction.sh  # Create and send transactions
 │   ├── validate-transaction.sh # Validate incoming transactions

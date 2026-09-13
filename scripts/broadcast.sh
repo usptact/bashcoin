@@ -28,9 +28,10 @@ for node in "${ALL_NODES[@]}"; do
         
         echo "Sending to ${node} (${NODE_IP})..."
         
-        # Send transaction via TCP using netcat
-        # Use timeout to avoid hanging
-        timeout 5 sh -c "cat '${TX_FILE}' | nc ${NODE_IP} ${PORT}" 2>/dev/null &
+        # Send transaction via TCP using netcat.
+        # -N shuts the socket down after EOF on stdin so the receiver sees end of
+        # input immediately (no waiting on the idle timeout). timeout guards hangs.
+        timeout 5 sh -c "cat '${TX_FILE}' | nc -N ${NODE_IP} ${PORT}" 2>/dev/null &
         
         # Don't wait for all sends to complete
     fi

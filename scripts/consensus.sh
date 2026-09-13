@@ -46,54 +46,63 @@ fi
 case "${ACTION}" in
     "calculate")
         echo "Calculating balances from ledger..."
-        
-        # Initialize balances
-        declare -A BALANCES
-        BALANCES["node1"]=1000
-        BALANCES["node2"]=1000
-        BALANCES["node3"]=1000
-        BALANCES["node4"]=1000
-        BALANCES["node5"]=1000
-        
-        # Process all transactions
-        if [ -f "${LEDGER_DIR}/transactions.jsonl" ]; then
-            while IFS= read -r line; do
-                # Skip empty lines
-                [ -z "$line" ] && continue
-                
-                # Try to parse JSON, skip if invalid
-                TX_TYPE=$(echo "${line}" | jq -r '.type' 2>/dev/null)
-                
-                if [ "${TX_TYPE}" == "transaction" ]; then
-                    FROM=$(echo "${line}" | jq -r '.from' 2>/dev/null)
-                    TO=$(echo "${line}" | jq -r '.to' 2>/dev/null)
-                    AMOUNT=$(echo "${line}" | jq -r '.amount' 2>/dev/null)
-                    
-                    # Validate parsed data
-                    if [ -n "${FROM}" ] && [ -n "${TO}" ] && [ -n "${AMOUNT}" ] && [ "${AMOUNT}" != "null" ]; then
-                        # Update balances
-                        BALANCES["${FROM}"]=$(echo "${BALANCES[${FROM}]} - ${AMOUNT}" | bc)
-                        BALANCES["${TO}"]=$(echo "${BALANCES[${TO}]} + ${AMOUNT}" | bc)
+
+        # Serialize balance recomputation with a dedicated lock (separate from the
+        # ledger lock) so concurrent callers cannot interleave read-modify-write on
+        # balances.json. Using a distinct lock file means this is safe to call from
+        # within the ledger-lock critical section without deadlocking.
+        (
+            flock -x 201
+
+            # Initialize balances
+            declare -A BALANCES
+            BALANCES["node1"]=1000
+            BALANCES["node2"]=1000
+            BALANCES["node3"]=1000
+            BALANCES["node4"]=1000
+            BALANCES["node5"]=1000
+
+            # Process all transactions
+            if [ -f "${LEDGER_DIR}/transactions.jsonl" ]; then
+                while IFS= read -r line; do
+                    # Skip empty lines
+                    [ -z "$line" ] && continue
+
+                    # Try to parse JSON, skip if invalid
+                    TX_TYPE=$(echo "${line}" | jq -r '.type' 2>/dev/null)
+
+                    if [ "${TX_TYPE}" == "transaction" ]; then
+                        FROM=$(echo "${line}" | jq -r '.from' 2>/dev/null)
+                        TO=$(echo "${line}" | jq -r '.to' 2>/dev/null)
+                        AMOUNT=$(echo "${line}" | jq -r '.amount' 2>/dev/null)
+
+                        # Validate parsed data
+                        if [ -n "${FROM}" ] && [ -n "${TO}" ] && [ -n "${AMOUNT}" ] && [ "${AMOUNT}" != "null" ]; then
+                            # Update balances
+                            BALANCES["${FROM}"]=$(echo "${BALANCES[${FROM}]} - ${AMOUNT}" | bc)
+                            BALANCES["${TO}"]=$(echo "${BALANCES[${TO}]} + ${AMOUNT}" | bc)
+                        fi
                     fi
-                fi
-            done < "${LEDGER_DIR}/transactions.jsonl"
-        fi
-        
-        # Write balances to file
-        jq -n \
-            --arg node1 "${BALANCES[node1]}" \
-            --arg node2 "${BALANCES[node2]}" \
-            --arg node3 "${BALANCES[node3]}" \
-            --arg node4 "${BALANCES[node4]}" \
-            --arg node5 "${BALANCES[node5]}" \
-            '{
-                "node1": ($node1 | tonumber),
-                "node2": ($node2 | tonumber),
-                "node3": ($node3 | tonumber),
-                "node4": ($node4 | tonumber),
-                "node5": ($node5 | tonumber)
-            }' > "${LEDGER_DIR}/balances.json"
-        
+                done < "${LEDGER_DIR}/transactions.jsonl"
+            fi
+
+            # Write balances to file atomically (write temp then move).
+            jq -n \
+                --arg node1 "${BALANCES[node1]}" \
+                --arg node2 "${BALANCES[node2]}" \
+                --arg node3 "${BALANCES[node3]}" \
+                --arg node4 "${BALANCES[node4]}" \
+                --arg node5 "${BALANCES[node5]}" \
+                '{
+                    "node1": ($node1 | tonumber),
+                    "node2": ($node2 | tonumber),
+                    "node3": ($node3 | tonumber),
+                    "node4": ($node4 | tonumber),
+                    "node5": ($node5 | tonumber)
+                }' > "${LEDGER_DIR}/balances.json.tmp" && \
+                mv "${LEDGER_DIR}/balances.json.tmp" "${LEDGER_DIR}/balances.json"
+        ) 201>/var/lock/balances.lock
+
         echo "Balances updated"
         ;;
         
@@ -132,7 +141,7 @@ case "${ACTION}" in
         
         if [ -f "${LEDGER_DIR}/transactions.jsonl" ]; then
             TOTAL_TX=$(wc -l < "${LEDGER_DIR}/transactions.jsonl")
-            GENESIS_TX=$(grep '"type": "genesis"' "${LEDGER_DIR}/transactions.jsonl" | wc -l)
+            GENESIS_TX=$(jq -r 'select(.type == "genesis") | .type' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | wc -l)
             REGULAR_TX=$((TOTAL_TX - GENESIS_TX))
             
             echo "Total transactions: ${TOTAL_TX}"

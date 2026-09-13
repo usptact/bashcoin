@@ -1,32 +1,27 @@
 # Dockerfile for BashCoin Ledger Nodes
-FROM alpine:latest
+# Pin the base image for reproducible builds.
+FROM alpine:3.20
 
-# Install required packages
+# Install required packages.
+# - socat provides the persistent, concurrent transaction listener
+# - netcat-openbsd is used as the lightweight broadcast client
 RUN apk add --no-cache \
     bash \
     rsync \
     jq \
     gnupg \
-    openssh \
     openntpd \
     coreutils \
     curl \
     netcat-openbsd \
+    socat \
     procps
 
 # Create necessary directories
 RUN mkdir -p /data/ledger \
     /data/pending \
     /data/keys \
-    /scripts \
-    /root/.ssh \
-    /var/run/sshd
-
-# Configure SSH
-RUN ssh-keygen -A
-RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
-RUN echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
-RUN echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
+    /scripts
 
 # Copy scripts
 COPY scripts/init-node.sh /scripts/
@@ -43,12 +38,11 @@ COPY scripts/entrypoint.sh /scripts/
 # Make scripts executable
 RUN chmod +x /scripts/*.sh
 
-# Expose SSH port for rsync
-EXPOSE 22
+# Expose rsync daemon port (ledger + public key sharing)
+EXPOSE 873/tcp
 
-# Expose port for transaction broadcasting
+# Expose port for transaction broadcasting (TCP)
 EXPOSE 9000/tcp
-EXPOSE 9000/udp
 
 WORKDIR /data
 

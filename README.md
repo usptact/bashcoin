@@ -41,8 +41,7 @@ Each Node Contains:
 ├── Ledger (transactions.jsonl)
 ├── Balance Tracker (balances.json)
 ├── Rsync Daemon (port 873)
-├── Transaction Listener (port 9000)
-└── SSH Server (port 22)
+└── Transaction Listener (port 9000, socat)
 ```
 
 ## Components
@@ -55,7 +54,7 @@ Each Node Contains:
 ### Scripts
 
 1. **entrypoint.sh**: Container initialization and service startup
-2. **init-node.sh**: Node initialization (GPG keys, SSH setup, ledger creation)
+2. **init-node.sh**: Node initialization (GPG keys, ledger creation, public key exchange)
 3. **ledger-daemon.sh**: Listens for incoming transactions on TCP port 9000
 4. **create-transaction.sh**: Create and broadcast a new transaction
 5. **validate-transaction.sh**: Validate incoming transactions (signature, balance, double-spend)
@@ -275,7 +274,7 @@ docker exec -it bashcoin-node1 /scripts/fix-ledger.sh
 
 When a node starts:
 1. Generates GPG keypair for transaction signing
-2. Creates SSH keys for rsync access
+2. Starts the rsync daemon for ledger and public key sharing
 3. Initializes ledger with genesis block
 4. Sets initial balance (1000 coins per node)
 5. Exchanges public keys with other nodes
@@ -330,10 +329,9 @@ Multiple mechanisms prevent double-spending:
 
 ### Ports
 
-- **22 (TCP)**: SSH for rsync
 - **123 (UDP)**: NTP time synchronization
-- **873 (TCP)**: Rsync daemon
-- **9000 (TCP)**: Transaction broadcasting
+- **873 (TCP)**: Rsync daemon (ledger + public key sharing)
+- **9000 (TCP)**: Transaction broadcasting (socat listener)
 
 ## Synchronization
 
@@ -345,7 +343,7 @@ Multiple mechanisms prevent double-spending:
 - ✅ **Automatic (Startup)**: Nodes automatically sync on restart to catch up on missed transactions
 - 🔄 **Manual (Rsync)**: Full ledger sync for recovery/catch-up only
 
-See [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md) and [NODE_RECOVERY.md](NODE_RECOVERY.md) for detailed information.
+See [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md) for detailed information.
 
 ```bash
 # You typically DON'T need this - transactions auto-broadcast
@@ -444,7 +442,7 @@ docker exec -it bashcoin-node3 /scripts/consensus.sh balance
 # Should show correct balance (1050) including the 50 coins received while down!
 ```
 
-See [NODE_RECOVERY.md](NODE_RECOVERY.md) for complete details on node recovery.
+See [SYNC_BEHAVIOR.md](SYNC_BEHAVIOR.md) for more details on synchronization and recovery.
 
 ## Limitations
 
@@ -463,7 +461,7 @@ This is a proof-of-concept and has several limitations:
 - **Production Use**: This is NOT suitable for production use
 - **Key Management**: GPG keys are generated and stored insecurely
 - **Network Security**: No TLS/SSL encryption for network communication
-- **Authentication**: Simplified SSH key management
+- **Authentication**: The rsync daemon is anonymous and read-only; there is no per-node authentication
 - **Access Control**: All nodes have full trust
 
 ## Extending the System
@@ -579,21 +577,13 @@ See the [LICENSE](LICENSE) file for full license text.
 - [GnuPG Documentation](https://www.gnupg.org/documentation/)
 - [Rsync Manual](https://rsync.samba.org/)
 
-## Project Consistency
-
-The project has been thoroughly analyzed for consistency across all components. See [CONSISTENCY_CHECK.md](CONSISTENCY_CHECK.md) for the complete analysis report.
-
-**Consistency Score: 99.5/100** ✅
-
-All configuration, documentation, scripts, and naming conventions are consistent throughout the project.
-
 ## Support
 
 For issues and questions:
 1. Check the logs: `docker-compose logs`
 2. Verify network connectivity: `docker network inspect bashcoin_bashcoin-network`
 3. Test individual components in isolation
-4. Review the [CONSISTENCY_CHECK.md](CONSISTENCY_CHECK.md) for verification commands
+4. Review [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues and fixes
 
 ---
 

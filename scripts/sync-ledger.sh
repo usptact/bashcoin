@@ -102,8 +102,9 @@ while IFS= read -r line; do
     
     # Check if this is a new transaction
     if [ -n "${TX_HASH}" ]; then
-        # Transaction has a hash - check if we already have it
-        if ! grep -q "\"hash\": \"${TX_HASH}\"" "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null; then
+        # Transaction has a hash - check if we already have it.
+        # Use jq (not a spaced grep) because the ledger is compact JSONL.
+        if [ -z "$(jq -r --arg h "${TX_HASH}" 'select(.hash == $h) | .hash' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
             # This is a new transaction - validate and add it
             echo "${line}" > "${TEMP_DIR}/temp_tx.json"
             
@@ -118,7 +119,7 @@ while IFS= read -r line; do
             # Check if we already have a genesis block from this node
             GENESIS_NODE=$(echo "${line}" | jq -r '.node // empty' 2>/dev/null)
             if [ -n "${GENESIS_NODE}" ]; then
-                if ! grep -q "\"node\": \"${GENESIS_NODE}\"" "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null; then
+                if [ -z "$(jq -r --arg gn "${GENESIS_NODE}" 'select(.type == "genesis" and .node == $gn) | .node' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
                     # Add genesis block
                     (
                         flock -x 200

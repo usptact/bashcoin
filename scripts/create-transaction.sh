@@ -106,8 +106,9 @@ TRANSACTION=$(jq -n \
         hash: $hash
     }')
 
-# Sign the transaction hash
-SIGNATURE=$(echo -n "${TX_HASH}" | gpg --armor --sign --local-user "${NODE_ID}@bashcoin.local" 2>/dev/null | base64 -w 0)
+# Sign the transaction hash with a *detached* signature so verifiers can bind
+# the signature to this exact hash (see validate-transaction.sh).
+SIGNATURE=$(echo -n "${TX_HASH}" | gpg --armor --detach-sign --local-user "${NODE_ID}@bashcoin.local" 2>/dev/null | base64 -w 0)
 
 # Add signature to transaction
 SIGNED_TRANSACTION=$(echo "${TRANSACTION}" | jq --arg sig "${SIGNATURE}" '. + {signature: $sig}')
@@ -119,16 +120,33 @@ echo "${SIGNED_TRANSACTION}" | jq .
 TX_FILE="${DATA_DIR}/pending/tx_${TX_HASH}.json"
 echo "${SIGNED_TRANSACTION}" | jq -c . > "${TX_FILE}"
 
-# Add to our own ledger immediately (we trust ourselves)
-# IMPORTANT: Use -c flag for compact JSON (JSONL format)
+# Add to our own ledger immediately (we trust ourselves), but do the balance
+# check and append atomically under the ledger lock so rapid successive sends
+# from this node cannot overspend (the earlier check above is only advisory).
+# IMPORTANT: Use -c flag for compact JSON (JSONL format).
 echo "Adding transaction to local ledger..."
 (
     flock -x 200
-    echo "${SIGNED_TRANSACTION}" | jq -c . >> "${LEDGER_DIR}/transactions.jsonl"
-) 200>/var/lock/ledger.lock
 
-# Update balances
-/scripts/consensus.sh calculate > /dev/null 2>&1
+    /scripts/consensus.sh calculate > /dev/null 2>&1
+    LOCKED_BALANCE=$(jq -r ".\"${NODE_ID}\" // 0" "${LEDGER_DIR}/balances.json" 2>/dev/null)
+    if (( $(echo "${LOCKED_BALANCE:-0} < ${AMOUNT}" | bc -l) )); then
+        echo "Error: Insufficient balance. You have ${LOCKED_BALANCE}, need ${AMOUNT}"
+        exit 11
+    fi
+
+    echo "${SIGNED_TRANSACTION}" | jq -c . >> "${LEDGER_DIR}/transactions.jsonl"
+
+    # Update balances to reflect the newly committed transaction.
+    /scripts/consensus.sh calculate > /dev/null 2>&1
+) 200>/var/lock/ledger.lock
+COMMIT_RC=$?
+
+if [ "${COMMIT_RC}" -ne 0 ]; then
+    echo "Transaction aborted before broadcast (code ${COMMIT_RC})"
+    rm -f "${TX_FILE}"
+    exit 1
+fi
 
 # Broadcast to all other nodes
 echo "Broadcasting transaction to network..."
