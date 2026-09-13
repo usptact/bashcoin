@@ -22,14 +22,14 @@ fi
 echo "Broadcasting transaction to network..."
 
 for node in $(get_node_ids_except "${NODE_ID}"); do
-    NODE_IP=$(get_node_ip "${node}")
+    NODE_HOST=$(get_node_host "${node}")
 
-    echo "Sending to ${node} (${NODE_IP})..."
+    echo "Sending to ${node} (${NODE_HOST})..."
 
     # Send transaction via TCP using netcat.
     # -N shuts the socket down after EOF on stdin so the receiver sees end of
     # input immediately (no waiting on the idle timeout). timeout guards hangs.
-    timeout 5 sh -c "cat '${TX_FILE}' | nc -N ${NODE_IP} ${PORT}" 2>/dev/null &
+    timeout 5 sh -c "cat '${TX_FILE}' | nc -N ${NODE_HOST} ${PORT}" 2>/dev/null &
 
     # Don't wait for all sends to complete
 done

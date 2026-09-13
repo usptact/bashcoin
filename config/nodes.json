@@ -1,10 +1,10 @@
 {
-  "comment": "Single source of truth for BashCoin network membership. To add or remove a node, edit this file and rebuild the images (docker-compose build). Also add/remove the matching service in docker-compose.yml. 'balance' is the node's initial (genesis) balance.",
+  "comment": "Single source of truth for BashCoin network membership. To add or remove a node, edit this file and rebuild the images (docker-compose build). Also add/remove the matching service in docker-compose.yml. 'host' is the peer's DNS name and MUST match the docker-compose service name (Docker's embedded DNS resolves it to the container). 'balance' is the node's initial (genesis) balance.",
   "nodes": [
-    { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
-    { "id": "node2", "ip": "172.25.0.12", "balance": 1000 },
-    { "id": "node3", "ip": "172.25.0.13", "balance": 1000 },
-    { "id": "node4", "ip": "172.25.0.14", "balance": 1000 },
-    { "id": "node5", "ip": "172.25.0.15", "balance": 1000 }
+    { "id": "node1", "host": "node1", "balance": 1000 },
+    { "id": "node2", "host": "node2", "balance": 1000 },
+    { "id": "node3", "host": "node3", "balance": 1000 },
+    { "id": "node4", "host": "node4", "balance": 1000 },
+    { "id": "node5", "host": "node5", "balance": 1000 }
   ]
 }

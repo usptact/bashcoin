@@ -7,8 +7,7 @@ services:
     container_name: bashcoin-ntp
     hostname: ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.10
+      - bashcoin-network
     ports:
       - "123:123/udp"
     cap_add:
@@ -24,10 +23,9 @@ services:
     hostname: node1
     environment:
       - NODE_ID=node1
-      - NTP_SERVER=172.25.0.10
+      - NTP_SERVER=ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.11
+      - bashcoin-network
     volumes:
       - node1-data:/data
       - node1-keys:/root/.gnupg
@@ -45,10 +43,9 @@ services:
     hostname: node2
     environment:
       - NODE_ID=node2
-      - NTP_SERVER=172.25.0.10
+      - NTP_SERVER=ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.12
+      - bashcoin-network
     volumes:
       - node2-data:/data
       - node2-keys:/root/.gnupg
@@ -66,10 +63,9 @@ services:
     hostname: node3
     environment:
       - NODE_ID=node3
-      - NTP_SERVER=172.25.0.10
+      - NTP_SERVER=ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.13
+      - bashcoin-network
     volumes:
       - node3-data:/data
       - node3-keys:/root/.gnupg
@@ -87,10 +83,9 @@ services:
     hostname: node4
     environment:
       - NODE_ID=node4
-      - NTP_SERVER=172.25.0.10
+      - NTP_SERVER=ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.14
+      - bashcoin-network
     volumes:
       - node4-data:/data
       - node4-keys:/root/.gnupg
@@ -108,10 +103,9 @@ services:
     hostname: node5
     environment:
       - NODE_ID=node5
-      - NTP_SERVER=172.25.0.10
+      - NTP_SERVER=ntp-server
     networks:
-      bashcoin-network:
-        ipv4_address: 172.25.0.15
+      - bashcoin-network
     volumes:
       - node5-data:/data
       - node5-keys:/root/.gnupg
@@ -120,12 +114,12 @@ services:
     stdin_open: true
     tty: true
 
+# A user-defined bridge network provides Docker's embedded DNS, so containers
+# resolve each other by service name (node1..node5, ntp-server). No static IP
+# addresses are needed.
 networks:
   bashcoin-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.25.0.0/16
 
 volumes:
   node1-data:
@@ -138,4 +132,3 @@ volumes:
   node4-keys:
   node5-data:
   node5-keys:
-

@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Default the NTP server to its DNS service name (resolved by Docker's embedded
+# DNS); no static IP is required.
+NTP_SERVER=${NTP_SERVER:-ntp-server}
+
 echo "=================================="
 echo "BashCoin Node: ${NODE_ID}"
 echo "=================================="

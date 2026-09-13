@@ -22,7 +22,7 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │                  Docker Host                            │
 │                                                         │
 │  ┌─────────────┐                                        │
-│  │  NTP Server │  (172.25.0.10)                        │
+│  │  NTP Server │  (ntp-server)                          │
 │  │  (Alpine)   │                                        │
 │  └──────┬──────┘                                        │
 │         │ UDP 123                                       │
@@ -31,11 +31,10 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │  │                                      │              │
 │  ▼                                      ▼              │
 │ ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐       │
-│ │ Node 1 │  │ Node 2 │  │ Node 3 │  │ ...    │       │
-│ │ .0.11  │  │ .0.12  │  │ .0.13  │  │        │       │
+│ │ node1  │  │ node2  │  │ node3  │  │ ...    │       │
 │ └────────┘  └────────┘  └────────┘  └────────┘       │
 │                                                         │
-│           bashcoin-network (172.25.0.0/16)            │
+│   bashcoin-network (bridge, DNS by service name)       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -271,7 +270,7 @@ fi
 5. **Recalculate**: Update balance state
 
 ```bash
-rsync -az rsync://172.25.0.12:873/ledger/transactions.jsonl ./remote_ledger.jsonl
+rsync -az rsync://node2:873/ledger/transactions.jsonl ./remote_ledger.jsonl
 ```
 
 ## Consensus Mechanism
@@ -364,14 +363,14 @@ Network membership is data-driven from a single file, `/config/nodes.json`:
 ```json
 {
   "nodes": [
-    { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
+    { "id": "node1", "host": "node1", "balance": 1000 },
     ...
   ]
 }
 ```
 
 `scripts/nodes-lib.sh` exposes helpers (`get_all_node_ids`, `get_node_ids_except`,
-`get_node_ip`, `get_initial_balance`, `get_node_count`) that every membership-aware
+`get_node_host`, `get_initial_balance`, `get_node_count`) that every membership-aware
 script sources. The balance model in `consensus.sh` also initializes accounts from
 this file, so adding a node does not require editing any script — only
 `config/nodes.json` and `docker-compose.yml`, followed by a rebuild.

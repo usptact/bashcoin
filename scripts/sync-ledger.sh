@@ -49,12 +49,12 @@ SYNC_COUNT=0
 
 # Collect ledgers from all other nodes listed in the membership config.
 for node in $(get_node_ids_except "${NODE_ID}"); do
-    NODE_IP=$(get_node_ip "${node}")
+    NODE_HOST=$(get_node_host "${node}")
 
-    echo "Syncing from ${node} (${NODE_IP})..."
+    echo "Syncing from ${node} (${NODE_HOST})..."
 
     # Try to rsync the ledger
-    if rsync -az --timeout=10 "rsync://${NODE_IP}:873/ledger/transactions.jsonl" "${TEMP_DIR}/${node}_transactions.jsonl" 2>/dev/null; then
+    if rsync -az --timeout=10 "rsync://${NODE_HOST}:873/ledger/transactions.jsonl" "${TEMP_DIR}/${node}_transactions.jsonl" 2>/dev/null; then
         echo "✓ Successfully synced from ${node}"
         SYNC_COUNT=$((SYNC_COUNT + 1))
     else

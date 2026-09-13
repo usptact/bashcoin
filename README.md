@@ -22,7 +22,7 @@ BashCoin is a proof-of-concept distributed ledger system that demonstrates block
 
 ```
 ┌─────────────┐
-│  NTP Server │  (172.25.0.10)
+│  NTP Server │  (ntp-server)
 │   (Alpine)  │
 └─────────────┘
        │
@@ -31,10 +31,9 @@ BashCoin is a proof-of-concept distributed ledger system that demonstrates block
    ┌───┴────────────────────────────────┐
    │                                    │
 ┌──▼──┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
-│Node1│  │Node2 │  │Node3 │  │Node4 │  │Node5 │
+│node1│  │node2 │  │node3 │  │node4 │  │node5 │
 └─────┘  └──────┘  └──────┘  └──────┘  └──────┘
-172.25   172.25    172.25    172.25    172.25
-.0.11    .0.12     .0.13     .0.14     .0.15
+   resolved by Docker DNS (no static IPs)
 
 Each Node Contains:
 ├── GPG Keypair (signing/verification)
@@ -319,13 +318,17 @@ Multiple mechanisms prevent double-spending:
 
 ## Network Architecture
 
-- **Docker Network**: 172.25.0.0/16
-- **NTP Server**: 172.25.0.10
-- **Node 1**: 172.25.0.11
-- **Node 2**: 172.25.0.12
-- **Node 3**: 172.25.0.13
-- **Node 4**: 172.25.0.14
-- **Node 5**: 172.25.0.15
+Nodes address each other by **DNS service name** on a user-defined Docker bridge
+network (`bashcoin-network`). Docker's embedded DNS resolves each name to the
+container's IP, so there are **no static IP addresses** to manage — Docker
+assigns them dynamically.
+
+- **Docker Network**: `bashcoin-network` (user-defined bridge, DNS enabled)
+- **NTP Server**: `ntp-server`
+- **Nodes**: `node1`, `node2`, `node3`, `node4`, `node5`
+
+Host names come from the `host` field in `config/nodes.json` and must match the
+docker-compose service names.
 
 ### Ports
 
@@ -474,18 +477,19 @@ node is two edits plus a rebuild — you no longer edit the scripts.
 ```json
 {
   "nodes": [
-    { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
-    { "id": "node2", "ip": "172.25.0.12", "balance": 1000 },
-    { "id": "node3", "ip": "172.25.0.13", "balance": 1000 },
-    { "id": "node4", "ip": "172.25.0.14", "balance": 1000 },
-    { "id": "node5", "ip": "172.25.0.15", "balance": 1000 },
-    { "id": "node6", "ip": "172.25.0.16", "balance": 1000 }
+    { "id": "node1", "host": "node1", "balance": 1000 },
+    { "id": "node2", "host": "node2", "balance": 1000 },
+    { "id": "node3", "host": "node3", "balance": 1000 },
+    { "id": "node4", "host": "node4", "balance": 1000 },
+    { "id": "node5", "host": "node5", "balance": 1000 },
+    { "id": "node6", "host": "node6", "balance": 1000 }
   ]
 }
 ```
 
 All scripts (broadcast, sync, key exchange) and the balance model read this file,
-so the peer list, IP addresses, and initial balances all come from one place.
+so the peer list, host names, and initial balances all come from one place. The
+`host` is a Docker DNS name and must match the service name below.
 
 **2. Add the matching service to `docker-compose.yml`:**
 
@@ -498,10 +502,9 @@ node6:
   hostname: node6
   environment:
     - NODE_ID=node6
-    - NTP_SERVER=172.25.0.10
+    - NTP_SERVER=ntp-server
   networks:
-    bashcoin-network:
-      ipv4_address: 172.25.0.16
+    - bashcoin-network
   volumes:
     - node6-data:/data
     - node6-keys:/root/.gnupg
@@ -516,8 +519,9 @@ docker-compose build
 docker-compose up -d
 ```
 
-> Note: the IP in `config/nodes.json` must match the `ipv4_address` in
-> `docker-compose.yml` for the same node.
+> Note: the `host` in `config/nodes.json` must match the service name in
+> `docker-compose.yml` for the same node (Docker DNS resolves it). No static
+> IP addresses are required.
 
 ### Implementing New Transaction Types
 

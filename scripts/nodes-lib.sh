@@ -9,10 +9,13 @@
 #
 #     {
 #       "nodes": [
-#         { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
+#         { "id": "node1", "host": "node1", "balance": 1000 },
 #         ...
 #       ]
 #     }
+#
+# 'host' is a DNS name resolved by Docker's embedded DNS (it must match the
+# docker-compose service name), so no static IP addresses are required.
 #
 # Override the config location with the NODES_CONFIG environment variable
 # (useful for testing).
@@ -30,10 +33,10 @@ get_node_ids_except() {
     jq -r --arg self "${self}" '.nodes[] | select(.id != $self) | .id' "${NODES_CONFIG}"
 }
 
-# Print the IP address for a node id (empty if the id is unknown).
-get_node_ip() {
+# Print the DNS host name for a node id (empty if the id is unknown).
+get_node_host() {
     local id="$1"
-    jq -r --arg id "${id}" '.nodes[] | select(.id == $id) | .ip' "${NODES_CONFIG}"
+    jq -r --arg id "${id}" '.nodes[] | select(.id == $id) | .host' "${NODES_CONFIG}"
 }
 
 # Print the configured initial (genesis) balance for a node id (0 if unset).

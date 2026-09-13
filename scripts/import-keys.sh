@@ -60,12 +60,12 @@ for node in $(get_node_ids_except "${NODE_ID}"); do
         continue
     fi
 
-    NODE_IP=$(get_node_ip "${node}")
+    NODE_HOST=$(get_node_host "${node}")
 
-    echo "Importing key from ${node} (${NODE_IP})..."
+    echo "Importing key from ${node} (${NODE_HOST})..."
 
     # Try to fetch and import
-    if rsync -az --timeout=5 "rsync://${NODE_IP}:873/keys/public.key" "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
+    if rsync -az --timeout=5 "rsync://${NODE_HOST}:873/keys/public.key" "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
         if gpg --import "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
             echo "✓ Successfully imported key from ${node}"
             IMPORTED_COUNT=$((IMPORTED_COUNT + 1))
