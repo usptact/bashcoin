@@ -39,3 +39,7 @@ Thumbs.db
 # Keep logo
 !logo.png
 
+# Keep network membership config (overrides the *.json rule above)
+!config/
+!config/nodes.json
+
