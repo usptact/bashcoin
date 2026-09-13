@@ -37,6 +37,7 @@ COPY scripts/validate-transaction.sh /scripts/
 COPY scripts/sync-ledger.sh /scripts/
 COPY scripts/broadcast.sh /scripts/
 COPY scripts/consensus.sh /scripts/
+COPY scripts/join-network.sh /scripts/
 COPY scripts/fix-ledger.sh /scripts/
 COPY scripts/import-keys.sh /scripts/
 COPY scripts/entrypoint.sh /scripts/

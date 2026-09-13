@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Load shared membership helpers (defines NODES_CONFIG, NODES_LEDGER, get_*,
+# is_member, is_join_allowed, get_max_join_balance).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 DATA_DIR="/data"
 LEDGER_DIR="${DATA_DIR}/ledger"
@@ -59,6 +63,119 @@ fi
 if [ ! -f "${TX_FILE}" ]; then
     echo "Error: Transaction file not found: ${TX_FILE}"
     exit 1
+fi
+
+RECORD_TYPE=$(jq -r '.type // "transaction"' "${TX_FILE}" 2>/dev/null)
+
+# --------------------------------------------------------------------------
+# node-join records (runtime membership).
+#
+# A node-join is a self-signed record carrying the joiner's DNS host and public
+# key. Accepting it makes the joiner a discoverable, verifiable member. Admission
+# rules prevent abuse:
+#   - the embedded key must actually sign the record (proves key ownership),
+#   - the id must not already be a member (no impersonation / takeover),
+#   - the minted balance must be within policy.max_join_balance (no self-minting;
+#     default cap is 0, so joiners must be funded by existing holders).
+# --------------------------------------------------------------------------
+if [ "${RECORD_TYPE}" == "node-join" ]; then
+    JNODE=$(jq -r '.node' "${TX_FILE}" 2>/dev/null)
+    JHOST=$(jq -r '.host' "${TX_FILE}" 2>/dev/null)
+    JPUB=$(jq -r '.pubkey' "${TX_FILE}" 2>/dev/null)
+    JBAL=$(jq -r '.balance' "${TX_FILE}" 2>/dev/null)
+    JNONCE=$(jq -r '.nonce' "${TX_FILE}" 2>/dev/null)
+    JTS=$(jq -r '.timestamp' "${TX_FILE}" 2>/dev/null)
+    JHASH=$(jq -r '.hash' "${TX_FILE}" 2>/dev/null)
+    JSIG=$(jq -r '.signature' "${TX_FILE}" 2>/dev/null)
+
+    echo "Validating node-join for ${JNODE}..."
+
+    if [ -z "${JNODE}" ] || [ "${JNODE}" == "null" ] || \
+       [ -z "${JHOST}" ] || [ "${JHOST}" == "null" ] || \
+       [ -z "${JPUB}" ] || [ "${JPUB}" == "null" ] || \
+       [ -z "${JBAL}" ] || [ "${JBAL}" == "null" ]; then
+        echo "Error: node-join missing required fields"
+        exit 1
+    fi
+
+    # Verify hash integrity.
+    EXPECTED_JHASH=$(printf '%s' "${JNODE}|${JHOST}|${JPUB}|${JBAL}|${JNONCE}|${JTS}" | sha256sum | cut -d' ' -f1)
+    if [ "${JHASH}" != "${EXPECTED_JHASH}" ]; then
+        echo "Error: node-join hash mismatch"
+        exit 1
+    fi
+
+    # Nonce must be unique (dedupe / replay protection).
+    if [ -f "${LEDGER_DIR}/transactions.jsonl" ] && \
+       [ -n "$(jq -r --arg n "${JNONCE}" 'select(.nonce == $n) | .nonce' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
+        echo "Error: Duplicate nonce detected (node-join replay)"
+        exit 1
+    fi
+
+    # Admission: is this id permitted to join?
+    if ! is_join_allowed "${JNODE}"; then
+        echo "Error: ${JNODE} is not in the allowed_joiners policy"
+        exit 1
+    fi
+
+    # Admission: id must not already belong to a member (prevents takeover).
+    if is_member "${JNODE}"; then
+        echo "Error: ${JNODE} is already a member (join rejected)"
+        exit 1
+    fi
+
+    # Admission: minted balance must be within policy.
+    MAX_JOIN=$(get_max_join_balance)
+    if (( $(echo "${JBAL} < 0 || ${JBAL} > ${MAX_JOIN}" | bc -l) )); then
+        echo "Error: node-join balance ${JBAL} exceeds policy max ${MAX_JOIN}"
+        exit 1
+    fi
+
+    # Verify the self-signature using the embedded public key. Importing the key
+    # is required to verify and is also how the joiner's key is distributed.
+    echo "${JPUB}" | base64 -d > "/tmp/joinpub_${JHASH}.asc" 2>/dev/null
+    gpg --import "/tmp/joinpub_${JHASH}.asc" >/dev/null 2>&1
+    JSIG_FILE="/tmp/joinsig_${JHASH}.asc"
+    JDATA_FILE="/tmp/joindata_${JHASH}.txt"
+    echo "${JSIG}" | base64 -d > "${JSIG_FILE}" 2>/dev/null
+    printf '%s' "${JHASH}" > "${JDATA_FILE}"
+    if ! gpg --verify "${JSIG_FILE}" "${JDATA_FILE}" 2>&1 | grep -q "Good signature from \"${JNODE} "; then
+        echo "Error: node-join self-signature is invalid"
+        rm -f "/tmp/joinpub_${JHASH}.asc" "${JSIG_FILE}" "${JDATA_FILE}"
+        exit 1
+    fi
+    rm -f "/tmp/joinpub_${JHASH}.asc" "${JSIG_FILE}" "${JDATA_FILE}"
+
+    echo "Transaction validation successful!"
+
+    if [ "$ADD_TO_LEDGER" == "true" ]; then
+        echo "Adding node-join to ledger..."
+        (
+            flock -x 200
+            # Re-check under lock (TOCTOU).
+            if [ -n "$(jq -r --arg n "${JNONCE}" 'select(.nonce == $n) | .nonce' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | head -n1)" ]; then
+                echo "Error: Duplicate nonce under lock (node-join replay)"
+                exit 10
+            fi
+            if is_member "${JNODE}"; then
+                echo "Error: ${JNODE} became a member under lock"
+                exit 12
+            fi
+            jq -c . "${TX_FILE}" >> "${LEDGER_DIR}/transactions.jsonl"
+            /scripts/consensus.sh calculate > /dev/null 2>&1
+        ) 200>/var/lock/ledger.lock
+        LOCK_RC=$?
+
+        rm -f "${PENDING_DIR}/join_${JHASH}.json"
+
+        if [ "${LOCK_RC}" -ne 0 ]; then
+            echo "node-join rejected during atomic commit (code ${LOCK_RC})"
+            exit 1
+        fi
+        echo "node-join added to ledger; ${JNODE} is now a member"
+    fi
+
+    exit 0
 fi
 
 # Parse transaction

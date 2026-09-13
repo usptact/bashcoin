@@ -22,6 +22,7 @@ help:
 	@echo "  make shell-node1 - Open shell in node1"
 	@echo "  make shell-node2 - Open shell in node2"
 	@echo "  make rebuild     - Rebuild everything from scratch"
+	@echo "  make join-demo   - Start node6 as a runtime joiner and fund it"
 	@echo ""
 
 # Build Docker images
@@ -147,6 +148,23 @@ test-failure:
 	docker exec -it bashcoin-node3 /scripts/sync-ledger.sh
 	@echo "5. Checking balance on node3..."
 	docker exec -it bashcoin-node3 /scripts/consensus.sh balance
+
+# Runtime join demo: start node6 (a non-seed joiner) and show it being discovered
+join-demo:
+	@echo "Starting node6 as a runtime joiner (not a seed)..."
+	docker-compose --profile join-demo up -d --build node6
+	@echo "Waiting for node6 to announce and the network to discover it..."
+	@sleep 15
+	@echo ""
+	@echo "Membership as seen by node1 (should include node6):"
+	docker exec bashcoin-node1 /scripts/consensus.sh stats
+	@echo ""
+	@echo "Funding node6 with 100 coins from node1..."
+	docker exec bashcoin-node1 /scripts/create-transaction.sh node6 100
+	@sleep 3
+	@echo ""
+	@echo "node6 balance (expect 100):"
+	docker exec bashcoin-node6 /scripts/consensus.sh balance
 
 # Quick demo
 demo:

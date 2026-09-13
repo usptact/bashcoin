@@ -114,6 +114,30 @@ services:
     stdin_open: true
     tty: true
 
+  # Demo runtime joiner. NOT a seed (absent from config/nodes.json), so on boot
+  # it announces itself with a node-join record and is discovered by node1..node5
+  # with no rebuild. Behind the "join-demo" profile so it is not started by
+  # default. Bring it up with: docker-compose --profile join-demo up -d node6
+  node6:
+    profiles: ["join-demo"]
+    build:
+      context: .
+      dockerfile: Dockerfile.node
+    container_name: bashcoin-node6
+    hostname: node6
+    environment:
+      - NODE_ID=node6
+      - NTP_SERVER=ntp-server
+    networks:
+      - bashcoin-network
+    volumes:
+      - node6-data:/data
+      - node6-keys:/root/.gnupg
+    depends_on:
+      - ntp-server
+    stdin_open: true
+    tty: true
+
 # A user-defined bridge network provides Docker's embedded DNS, so containers
 # resolve each other by service name (node1..node5, ntp-server). No static IP
 # addresses are needed.
@@ -132,3 +156,5 @@ volumes:
   node4-keys:
   node5-data:
   node5-keys:
+  node6-data:
+  node6-keys:

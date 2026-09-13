@@ -86,6 +86,13 @@ case "${ACTION}" in
                             BALANCES["${FROM}"]=$(echo "${BALANCES[${FROM}]:-0} - ${AMOUNT}" | bc)
                             BALANCES["${TO}"]=$(echo "${BALANCES[${TO}]:-0} + ${AMOUNT}" | bc)
                         fi
+                    elif [ "${TX_TYPE}" == "node-join" ]; then
+                        # A runtime member joins; mint its (policy-capped) balance.
+                        JNODE=$(echo "${line}" | jq -r '.node' 2>/dev/null)
+                        JBAL=$(echo "${line}" | jq -r '.balance // 0' 2>/dev/null)
+                        if [ -n "${JNODE}" ] && [ "${JNODE}" != "null" ]; then
+                            BALANCES["${JNODE}"]=$(echo "${BALANCES[${JNODE}]:-0} + ${JBAL}" | bc)
+                        fi
                     fi
                 done < "${LEDGER_DIR}/transactions.jsonl"
             fi
@@ -147,10 +154,12 @@ case "${ACTION}" in
         if [ -f "${LEDGER_DIR}/transactions.jsonl" ]; then
             TOTAL_TX=$(wc -l < "${LEDGER_DIR}/transactions.jsonl")
             GENESIS_TX=$(jq -r 'select(.type == "genesis") | .type' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | wc -l)
-            REGULAR_TX=$((TOTAL_TX - GENESIS_TX))
+            JOIN_TX=$(jq -r 'select(.type == "node-join") | .type' "${LEDGER_DIR}/transactions.jsonl" 2>/dev/null | wc -l)
+            REGULAR_TX=$((TOTAL_TX - GENESIS_TX - JOIN_TX))
             
-            echo "Total transactions: ${TOTAL_TX}"
+            echo "Total records: ${TOTAL_TX}"
             echo "Genesis blocks: ${GENESIS_TX}"
+            echo "Node-join records: ${JOIN_TX}"
             echo "Regular transactions: ${REGULAR_TX}"
             echo ""
         fi

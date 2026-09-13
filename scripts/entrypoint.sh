@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Load shared membership helpers (for is_seed).
+source /scripts/nodes-lib.sh
+
 # Default the NTP server to its DNS service name (resolved by Docker's embedded
 # DNS); no static IP is required.
 NTP_SERVER=${NTP_SERVER:-ntp-server}
@@ -42,6 +45,15 @@ fi
 echo "Starting ledger daemon..."
 /scripts/ledger-daemon.sh &
 
+# If this node is not part of the seed (genesis) set, it is a runtime joiner:
+# announce ourselves to the network so existing nodes discover us and import our
+# key. Existing seed nodes require no rebuild to learn about us.
+if ! is_seed "${NODE_ID}"; then
+    echo "${NODE_ID} is not a seed node; announcing join to the network..."
+    # Give the ledger daemon and seed nodes a moment to be ready.
+    ( sleep 8; /scripts/join-network.sh ) &
+fi
+
 # Keep container running and show logs
 echo "=================================="
 echo "Node ${NODE_ID} is ready!"
@@ -54,6 +66,7 @@ echo "  - View balance: /scripts/consensus.sh balance"
 echo "  - Check GPG keys: gpg --list-keys"
 echo "  - Import missing keys: /scripts/import-keys.sh"
 echo "  - Sync ledger: /scripts/sync-ledger.sh"
+echo "  - Announce join (non-seed nodes): /scripts/join-network.sh"
 echo ""
 
 # Keep container alive
