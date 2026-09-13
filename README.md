@@ -466,9 +466,28 @@ This is a proof-of-concept and has several limitations:
 
 ## Extending the System
 
-### Adding More Nodes
+Network membership is defined in a single file, `config/nodes.json`. Adding a
+node is two edits plus a rebuild — you no longer edit the scripts.
 
-Edit `docker-compose.yml` to add additional nodes:
+**1. Add the node to `config/nodes.json`:**
+
+```json
+{
+  "nodes": [
+    { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
+    { "id": "node2", "ip": "172.25.0.12", "balance": 1000 },
+    { "id": "node3", "ip": "172.25.0.13", "balance": 1000 },
+    { "id": "node4", "ip": "172.25.0.14", "balance": 1000 },
+    { "id": "node5", "ip": "172.25.0.15", "balance": 1000 },
+    { "id": "node6", "ip": "172.25.0.16", "balance": 1000 }
+  ]
+}
+```
+
+All scripts (broadcast, sync, key exchange) and the balance model read this file,
+so the peer list, IP addresses, and initial balances all come from one place.
+
+**2. Add the matching service to `docker-compose.yml`:**
 
 ```yaml
 node6:
@@ -490,7 +509,15 @@ node6:
     - ntp-server
 ```
 
-Update scripts to include the new node in the `ALL_NODES` array.
+**3. Rebuild and restart** so every node picks up the new membership:
+
+```bash
+docker-compose build
+docker-compose up -d
+```
+
+> Note: the IP in `config/nodes.json` must match the `ipv4_address` in
+> `docker-compose.yml` for the same node.
 
 ### Implementing New Transaction Types
 

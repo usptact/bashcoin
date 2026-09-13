@@ -350,8 +350,31 @@ ntpd -s -S /usr/sbin/ntpd
     └── tx_*.json             # Pending transactions
 
 /root/.gnupg/                 # GPG keyring
-/scripts/                     # Application scripts
+/config/
+└── nodes.json                # Network membership (ids, IPs, initial balances)
+/scripts/
+├── nodes-lib.sh              # Shared membership helpers (sourced by scripts)
+└── ...                       # Application scripts
 ```
+
+## Membership Configuration
+
+Network membership is data-driven from a single file, `/config/nodes.json`:
+
+```json
+{
+  "nodes": [
+    { "id": "node1", "ip": "172.25.0.11", "balance": 1000 },
+    ...
+  ]
+}
+```
+
+`scripts/nodes-lib.sh` exposes helpers (`get_all_node_ids`, `get_node_ids_except`,
+`get_node_ip`, `get_initial_balance`, `get_node_count`) that every membership-aware
+script sources. The balance model in `consensus.sh` also initializes accounts from
+this file, so adding a node does not require editing any script — only
+`config/nodes.json` and `docker-compose.yml`, followed by a rebuild.
 
 ## Performance Considerations
 
