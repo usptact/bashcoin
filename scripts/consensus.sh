@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Load shared membership helpers (defines NODES_CONFIG and get_* functions).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 DATA_DIR="/data"
 LEDGER_DIR="${DATA_DIR}/ledger"
@@ -54,13 +57,13 @@ case "${ACTION}" in
         (
             flock -x 201
 
-            # Initialize balances
+            # Initialize balances from the membership config (data-driven, so any
+            # set of nodes works without editing this script).
             declare -A BALANCES
-            BALANCES["node1"]=1000
-            BALANCES["node2"]=1000
-            BALANCES["node3"]=1000
-            BALANCES["node4"]=1000
-            BALANCES["node5"]=1000
+            while IFS=$'\t' read -r _id _bal; do
+                [ -z "${_id}" ] && continue
+                BALANCES["${_id}"]="${_bal}"
+            done < <(jq -r '.nodes[] | "\(.id)\t\(.balance)"' "${NODES_CONFIG}")
 
             # Process all transactions
             if [ -f "${LEDGER_DIR}/transactions.jsonl" ]; then
@@ -78,28 +81,30 @@ case "${ACTION}" in
 
                         # Validate parsed data
                         if [ -n "${FROM}" ] && [ -n "${TO}" ] && [ -n "${AMOUNT}" ] && [ "${AMOUNT}" != "null" ]; then
-                            # Update balances
-                            BALANCES["${FROM}"]=$(echo "${BALANCES[${FROM}]} - ${AMOUNT}" | bc)
-                            BALANCES["${TO}"]=$(echo "${BALANCES[${TO}]} + ${AMOUNT}" | bc)
+                            # Update balances (accounts not in config default to 0
+                            # so supply is still conserved for unknown nodes).
+                            BALANCES["${FROM}"]=$(echo "${BALANCES[${FROM}]:-0} - ${AMOUNT}" | bc)
+                            BALANCES["${TO}"]=$(echo "${BALANCES[${TO}]:-0} + ${AMOUNT}" | bc)
                         fi
                     fi
                 done < "${LEDGER_DIR}/transactions.jsonl"
             fi
 
-            # Write balances to file atomically (write temp then move).
-            jq -n \
-                --arg node1 "${BALANCES[node1]}" \
-                --arg node2 "${BALANCES[node2]}" \
-                --arg node3 "${BALANCES[node3]}" \
-                --arg node4 "${BALANCES[node4]}" \
-                --arg node5 "${BALANCES[node5]}" \
-                '{
-                    "node1": ($node1 | tonumber),
-                    "node2": ($node2 | tonumber),
-                    "node3": ($node3 | tonumber),
-                    "node4": ($node4 | tonumber),
-                    "node5": ($node5 | tonumber)
-                }' > "${LEDGER_DIR}/balances.json.tmp" && \
+            # Write balances to file atomically (write temp then move). Emit one
+            # key per known account in deterministic (sorted) order, normalizing
+            # bc's bare-decimal output (e.g. ".5" -> "0.5") so jq can parse it.
+            {
+                for _id in $(printf '%s\n' "${!BALANCES[@]}" | sort); do
+                    _val="${BALANCES[${_id}]}"
+                    case "${_val}" in
+                        .*)  _val="0${_val}" ;;
+                        -.*) _val="-0${_val#-}" ;;
+                    esac
+                    printf '%s\t%s\n' "${_id}" "${_val}"
+                done
+            } | jq -R -s 'split("\n")
+                    | map(select(length > 0) | split("\t") | {(.[0]): (.[1] | tonumber)})
+                    | add // {}' > "${LEDGER_DIR}/balances.json.tmp" && \
                 mv "${LEDGER_DIR}/balances.json.tmp" "${LEDGER_DIR}/balances.json"
         ) 201>/var/lock/balances.lock
 

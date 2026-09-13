@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Load shared membership helpers (defines NODES_CONFIG and get_* functions).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 PORT=9000
 
@@ -16,25 +19,19 @@ if [ ! -f "${TX_FILE}" ]; then
     exit 1
 fi
 
-# List of all nodes
-ALL_NODES=("node1" "node2" "node3" "node4" "node5")
-
 echo "Broadcasting transaction to network..."
 
-for node in "${ALL_NODES[@]}"; do
-    if [ "${node}" != "${NODE_ID}" ]; then
-        NODE_NUM=$(echo ${node} | sed 's/node//')
-        NODE_IP="172.25.0.1${NODE_NUM}"
-        
-        echo "Sending to ${node} (${NODE_IP})..."
-        
-        # Send transaction via TCP using netcat.
-        # -N shuts the socket down after EOF on stdin so the receiver sees end of
-        # input immediately (no waiting on the idle timeout). timeout guards hangs.
-        timeout 5 sh -c "cat '${TX_FILE}' | nc -N ${NODE_IP} ${PORT}" 2>/dev/null &
-        
-        # Don't wait for all sends to complete
-    fi
+for node in $(get_node_ids_except "${NODE_ID}"); do
+    NODE_IP=$(get_node_ip "${node}")
+
+    echo "Sending to ${node} (${NODE_IP})..."
+
+    # Send transaction via TCP using netcat.
+    # -N shuts the socket down after EOF on stdin so the receiver sees end of
+    # input immediately (no waiting on the idle timeout). timeout guards hangs.
+    timeout 5 sh -c "cat '${TX_FILE}' | nc -N ${NODE_IP} ${PORT}" 2>/dev/null &
+
+    # Don't wait for all sends to complete
 done
 
 # Wait a bit for sends to complete

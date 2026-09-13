@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Load shared membership helpers (defines NODES_CONFIG and get_* functions).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 DATA_DIR="/data"
 LEDGER_DIR="${DATA_DIR}/ledger"
@@ -42,26 +45,20 @@ echo "Starting ledger synchronization..."
 # Create temp directory
 mkdir -p "${TEMP_DIR}"
 
-# List of all nodes
-ALL_NODES=("node1" "node2" "node3" "node4" "node5")
-
 SYNC_COUNT=0
 
-# Collect ledgers from all nodes
-for node in "${ALL_NODES[@]}"; do
-    if [ "${node}" != "${NODE_ID}" ]; then
-        NODE_NUM=$(echo ${node} | sed 's/node//')
-        NODE_IP="172.25.0.1${NODE_NUM}"
-        
-        echo "Syncing from ${node} (${NODE_IP})..."
-        
-        # Try to rsync the ledger
-        if rsync -az --timeout=10 "rsync://${NODE_IP}:873/ledger/transactions.jsonl" "${TEMP_DIR}/${node}_transactions.jsonl" 2>/dev/null; then
-            echo "✓ Successfully synced from ${node}"
-            SYNC_COUNT=$((SYNC_COUNT + 1))
-        else
-            echo "✗ Failed to sync from ${node} (node may not be ready)"
-        fi
+# Collect ledgers from all other nodes listed in the membership config.
+for node in $(get_node_ids_except "${NODE_ID}"); do
+    NODE_IP=$(get_node_ip "${node}")
+
+    echo "Syncing from ${node} (${NODE_IP})..."
+
+    # Try to rsync the ledger
+    if rsync -az --timeout=10 "rsync://${NODE_IP}:873/ledger/transactions.jsonl" "${TEMP_DIR}/${node}_transactions.jsonl" 2>/dev/null; then
+        echo "✓ Successfully synced from ${node}"
+        SYNC_COUNT=$((SYNC_COUNT + 1))
+    else
+        echo "✗ Failed to sync from ${node} (node may not be ready)"
     fi
 done
 
