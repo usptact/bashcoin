@@ -13,13 +13,9 @@ ntpd -s -d -S /usr/sbin/ntpd &
 # Wait a bit for NTP to sync
 sleep 2
 
-# Initialize the node (GPG keys, SSH, etc.)
+# Initialize the node (GPG keys, ledger, key exchange, etc.)
 echo "Initializing node..."
 /scripts/init-node.sh
-
-# Start SSH daemon for rsync
-echo "Starting SSH daemon..."
-/usr/sbin/sshd
 
 # Check if this is a restart (ledger already exists with transactions)
 # If so, sync with other nodes to catch up on missed transactions

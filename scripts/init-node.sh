@@ -10,30 +10,8 @@ PENDING_DIR="${DATA_DIR}/pending"
 # Initialize directories
 mkdir -p "${KEYS_DIR}" "${LEDGER_DIR}" "${PENDING_DIR}"
 
-# Generate SSH key if not exists
-if [ ! -f /root/.ssh/id_rsa ]; then
-    echo "Generating SSH key..."
-    ssh-keygen -t rsa -b 2048 -f /root/.ssh/id_rsa -N ""
-    cp /root/.ssh/id_rsa.pub "${KEYS_DIR}/ssh_key.pub"
-fi
-
-# Setup SSH authorized_keys for all nodes
-echo "Setting up SSH authorized keys..."
-cat > /root/.ssh/authorized_keys << 'EOF'
-# This will be populated by nodes exchanging keys
-# For now, we'll use a shared key approach
-EOF
-
-# Generate a shared SSH key for simplicity (in production, each would have unique keys)
-if [ ! -f /root/.ssh/known_hosts ]; then
-    touch /root/.ssh/known_hosts
-    # Accept all hosts in our network (not secure for production!)
-    cat > /root/.ssh/config << 'EOF'
-Host 172.25.0.*
-    StrictHostKeyChecking no
-    UserKnownHostsFile=/dev/null
-EOF
-fi
+# Note: inter-node transport uses the rsync daemon protocol (port 873) and TCP
+# broadcasting (port 9000). No SSH is required, so none is configured.
 
 # Generate GPG key if not exists
 if [ ! -f "${KEYS_DIR}/public.key" ]; then
@@ -124,7 +102,7 @@ log file = /var/log/rsyncd.log
 [pending]
     path = /data/pending
     comment = Pending transactions
-    read only = no
+    read only = yes
 EOF
 
 rsync --daemon
