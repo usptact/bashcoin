@@ -22,7 +22,7 @@ BashCoin is a proof-of-concept distributed ledger system that demonstrates block
 
 ```
 ┌─────────────┐
-│  NTP Server │  (172.25.0.10)
+│  NTP Server │  (ntp-server)
 │   (Alpine)  │
 └─────────────┘
        │
@@ -31,10 +31,9 @@ BashCoin is a proof-of-concept distributed ledger system that demonstrates block
    ┌───┴────────────────────────────────┐
    │                                    │
 ┌──▼──┐  ┌──────┐  ┌──────┐  ┌──────┐  ┌──────┐
-│Node1│  │Node2 │  │Node3 │  │Node4 │  │Node5 │
+│node1│  │node2 │  │node3 │  │node4 │  │node5 │
 └─────┘  └──────┘  └──────┘  └──────┘  └──────┘
-172.25   172.25    172.25    172.25    172.25
-.0.11    .0.12     .0.13     .0.14     .0.15
+   resolved by Docker DNS (no static IPs)
 
 Each Node Contains:
 ├── GPG Keypair (signing/verification)
@@ -319,13 +318,17 @@ Multiple mechanisms prevent double-spending:
 
 ## Network Architecture
 
-- **Docker Network**: 172.25.0.0/16
-- **NTP Server**: 172.25.0.10
-- **Node 1**: 172.25.0.11
-- **Node 2**: 172.25.0.12
-- **Node 3**: 172.25.0.13
-- **Node 4**: 172.25.0.14
-- **Node 5**: 172.25.0.15
+Nodes address each other by **DNS service name** on a user-defined Docker bridge
+network (`bashcoin-network`). Docker's embedded DNS resolves each name to the
+container's IP, so there are **no static IP addresses** to manage — Docker
+assigns them dynamically.
+
+- **Docker Network**: `bashcoin-network` (user-defined bridge, DNS enabled)
+- **NTP Server**: `ntp-server`
+- **Nodes**: `node1`, `node2`, `node3`, `node4`, `node5`
+
+Host names come from the `host` field in `config/nodes.json` and must match the
+docker-compose service names.
 
 ### Ports
 
@@ -466,9 +469,65 @@ This is a proof-of-concept and has several limitations:
 
 ## Extending the System
 
-### Adding More Nodes
+There are two ways to add a node, depending on whether it should be part of the
+initial (genesis) supply.
 
-Edit `docker-compose.yml` to add additional nodes:
+### Option A — Runtime join (no rebuild of existing nodes)
+
+A node whose id is **not** in `config/nodes.json` is a *runtime joiner*. On boot
+it announces itself with a self-signed `node-join` record (carrying its DNS host
+and public key) that is appended to the ledger and broadcast to the seed nodes.
+Existing nodes discover it from the ledger, import its key, and start routing to
+it — **no config edit or rebuild of the existing nodes is required**.
+
+Admission is controlled by `config/nodes.json` → `policy`:
+
+- `max_join_balance` (default **0**) caps the coins a join may mint. With `0`, a
+  joiner starts with nothing and must be funded by an existing holder — so the
+  genesis supply stays fixed and no one can mint themselves money.
+- `allowed_joiners` (default empty = open join) restricts which ids may join.
+- A join can never take over an existing member's id.
+
+A ready-to-run demo node (`node6`) ships behind a compose profile:
+
+```bash
+# Bring up the 5-node network
+docker-compose up -d
+
+# Start node6 as a runtime joiner (not a seed) — it auto-announces itself
+docker-compose --profile join-demo up -d --build node6
+# ...or: make join-demo
+
+# After ~15s, every node knows node6 (balance 0 until funded)
+docker exec -it bashcoin-node1 /scripts/consensus.sh stats
+
+# Fund the newcomer from an existing holder
+docker exec -it bashcoin-node1 /scripts/create-transaction.sh node6 100
+docker exec -it bashcoin-node6 /scripts/consensus.sh balance   # -> 100
+```
+
+> The container must be reachable by its `NODE_ID` as a DNS name — use a compose
+> service named `node6` (or set `--network-alias node6` with `docker run`).
+
+### Option B — Genesis seed member (part of the initial supply)
+
+To make a node part of the genesis set with an initial balance, add it to
+`config/nodes.json` **and** `docker-compose.yml`, then rebuild so every node
+shares the same seed config:
+
+```json
+{
+  "policy": { "max_join_balance": 0, "allowed_joiners": [] },
+  "nodes": [
+    { "id": "node1", "host": "node1", "balance": 1000 },
+    { "id": "node2", "host": "node2", "balance": 1000 },
+    { "id": "node3", "host": "node3", "balance": 1000 },
+    { "id": "node4", "host": "node4", "balance": 1000 },
+    { "id": "node5", "host": "node5", "balance": 1000 },
+    { "id": "node6", "host": "node6", "balance": 1000 }
+  ]
+}
+```
 
 ```yaml
 node6:
@@ -479,10 +538,9 @@ node6:
   hostname: node6
   environment:
     - NODE_ID=node6
-    - NTP_SERVER=172.25.0.10
+    - NTP_SERVER=ntp-server
   networks:
-    bashcoin-network:
-      ipv4_address: 172.25.0.16
+    - bashcoin-network
   volumes:
     - node6-data:/data
     - node6-keys:/root/.gnupg
@@ -490,7 +548,12 @@ node6:
     - ntp-server
 ```
 
-Update scripts to include the new node in the `ALL_NODES` array.
+```bash
+docker-compose build && docker-compose up -d
+```
+
+> Note: the `host` in `config/nodes.json` must match the service name in
+> `docker-compose.yml` (Docker DNS resolves it). No static IPs are required.
 
 ### Implementing New Transaction Types
 

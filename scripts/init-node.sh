@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Load shared membership helpers (defines NODES_CONFIG and get_* functions).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 DATA_DIR="/data"
 KEYS_DIR="${DATA_DIR}/keys"
@@ -62,22 +65,10 @@ if [ ! -f "${LEDGER_DIR}/transactions.jsonl" ]; then
     echo "${GENESIS_BLOCK}" >> "${LEDGER_DIR}/transactions.jsonl"
 fi
 
-# Initialize balance file
+# Initialize balance file from the membership config (data-driven).
 if [ ! -f "${LEDGER_DIR}/balances.json" ]; then
-    # Each node starts with 1000 coins
-    jq -n \
-        --arg node1 "node1" \
-        --arg node2 "node2" \
-        --arg node3 "node3" \
-        --arg node4 "node4" \
-        --arg node5 "node5" \
-        '{
-            ($node1): 1000,
-            ($node2): 1000,
-            ($node3): 1000,
-            ($node4): 1000,
-            ($node5): 1000
-        }' > "${LEDGER_DIR}/balances.json"
+    jq '[.nodes[] | {(.id): .balance}] | add // {}' "${NODES_CONFIG}" \
+        > "${LEDGER_DIR}/balances.json"
 fi
 
 # Start rsync daemon BEFORE key exchange (so other nodes can fetch our key)
@@ -112,35 +103,31 @@ echo "Exchanging public keys with other nodes..."
 echo "Waiting for other nodes' rsync daemons to be ready..."
 sleep 10
 
-# Try to import public keys from other nodes
-OTHER_NODES=("node1" "node2" "node3" "node4" "node5")
+# Try to import public keys from the other nodes listed in the membership config.
 IMPORTED_COUNT=0
 
-for node in "${OTHER_NODES[@]}"; do
-    if [ "${node}" != "${NODE_ID}" ]; then
-        NODE_NUM=$(echo ${node} | sed 's/node//')
-        NODE_IP="172.25.0.1${NODE_NUM}"
-        
-        echo "Fetching public key from ${node} (${NODE_IP})..."
-        
-        # Try multiple times with increasing backoff
-        for attempt in {1..15}; do
-            if rsync -az --timeout=5 "rsync://${NODE_IP}:873/keys/public.key" "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
-                # Import the key
-                if gpg --import "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
-                    echo "✓ Successfully imported public key from ${node}"
-                    IMPORTED_COUNT=$((IMPORTED_COUNT + 1))
-                    break
-                fi
+for node in $(get_node_ids_except "${NODE_ID}"); do
+    NODE_HOST=$(get_node_host "${node}")
+
+    echo "Fetching public key from ${node} (${NODE_HOST})..."
+
+    # Try multiple times with increasing backoff
+    for attempt in {1..15}; do
+        if rsync -az --timeout=5 "rsync://${NODE_HOST}:873/keys/public.key" "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
+            # Import the key
+            if gpg --import "${KEYS_DIR}/${node}_public.key" 2>/dev/null; then
+                echo "✓ Successfully imported public key from ${node}"
+                IMPORTED_COUNT=$((IMPORTED_COUNT + 1))
+                break
             fi
-            
-            # Exponential backoff: 2, 4, 6, 8... seconds
-            sleep $((attempt * 2))
-        done
-        
-        if [ ! -f "${KEYS_DIR}/${node}_public.key" ]; then
-            echo "✗ Failed to fetch key from ${node} (will retry later)"
         fi
+
+        # Exponential backoff: 2, 4, 6, 8... seconds
+        sleep $((attempt * 2))
+    done
+
+    if [ ! -f "${KEYS_DIR}/${node}_public.key" ]; then
+        echo "✗ Failed to fetch key from ${node} (will retry later)"
     fi
 done
 

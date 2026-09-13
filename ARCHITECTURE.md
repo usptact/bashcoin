@@ -22,7 +22,7 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │                  Docker Host                            │
 │                                                         │
 │  ┌─────────────┐                                        │
-│  │  NTP Server │  (172.25.0.10)                        │
+│  │  NTP Server │  (ntp-server)                          │
 │  │  (Alpine)   │                                        │
 │  └──────┬──────┘                                        │
 │         │ UDP 123                                       │
@@ -31,11 +31,10 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 │  │                                      │              │
 │  ▼                                      ▼              │
 │ ┌────────┐  ┌────────┐  ┌────────┐  ┌────────┐       │
-│ │ Node 1 │  │ Node 2 │  │ Node 3 │  │ ...    │       │
-│ │ .0.11  │  │ .0.12  │  │ .0.13  │  │        │       │
+│ │ node1  │  │ node2  │  │ node3  │  │ ...    │       │
 │ └────────┘  └────────┘  └────────┘  └────────┘       │
 │                                                         │
-│           bashcoin-network (172.25.0.0/16)            │
+│   bashcoin-network (bridge, DNS by service name)       │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -167,6 +166,25 @@ BashCoin is a distributed ledger system that implements blockchain-like concepts
 }
 ```
 
+### Node-Join Record (runtime membership)
+
+```json
+{
+  "type": "node-join",
+  "node": "node6",
+  "host": "node6",
+  "pubkey": "<base64 of the armored GPG public key>",
+  "balance": 0,
+  "nonce": "abc123...",
+  "timestamp": "2025-10-14T12:00:00Z",
+  "hash": "sha256(node|host|pubkey|balance|nonce|timestamp)",
+  "signature": "base64 detached GPG signature over the hash (self-signed)"
+}
+```
+
+The record is **self-signed** with the very key it publishes, which proves the
+joiner owns the key and distributes that key to every node that has the ledger.
+
 ### Balance State
 
 ```json
@@ -271,7 +289,7 @@ fi
 5. **Recalculate**: Update balance state
 
 ```bash
-rsync -az rsync://172.25.0.12:873/ledger/transactions.jsonl ./remote_ledger.jsonl
+rsync -az rsync://node2:873/ledger/transactions.jsonl ./remote_ledger.jsonl
 ```
 
 ## Consensus Mechanism
@@ -350,8 +368,67 @@ ntpd -s -S /usr/sbin/ntpd
     └── tx_*.json             # Pending transactions
 
 /root/.gnupg/                 # GPG keyring
-/scripts/                     # Application scripts
+/config/
+└── nodes.json                # Network membership (ids, IPs, initial balances)
+/scripts/
+├── nodes-lib.sh              # Shared membership helpers (sourced by scripts)
+└── ...                       # Application scripts
 ```
+
+## Membership Configuration
+
+Network membership is data-driven from a single file, `/config/nodes.json`:
+
+```json
+{
+  "nodes": [
+    { "id": "node1", "host": "node1", "balance": 1000 },
+    ...
+  ]
+}
+```
+
+`scripts/nodes-lib.sh` exposes helpers (`get_seed_node_ids`, `get_all_node_ids`,
+`get_node_ids_except`, `get_node_host`, `get_initial_balance`, `get_node_count`,
+`is_member`, `is_seed`, `is_join_allowed`, `get_max_join_balance`) that every
+membership-aware script sources.
+
+### Two membership layers
+
+- **Seed (genesis) members** come from `config/nodes.json`. This file is baked
+  into the image and identical on every node, so all nodes agree on the genesis
+  set and its initial balances.
+- **Joined members** are added at runtime via `node-join` records in the ledger.
+  Because the record carries the joiner's host and public key, any node that has
+  the ledger can discover and verify the joiner.
+
+**Effective membership = seeds ∪ joined members** (seeds win on id collision).
+All addressing (broadcast, sync, key import) and the balance model derive from
+this effective set, so a runtime joiner needs no rebuild of the existing nodes.
+
+### Runtime join flow
+
+1. A node whose `NODE_ID` is not a seed is a joiner. On boot (`entrypoint.sh`) it
+   runs `join-network.sh`, which builds a self-signed `node-join` record and
+   broadcasts it to the seeds (same TCP path as transactions).
+2. Each receiving node validates the record (`validate-transaction.sh`),
+   imports the embedded public key, and appends it to the ledger.
+3. From then on the joiner is part of effective membership everywhere; its
+   transactions can be verified and it is included in broadcasts.
+
+### Admission control
+
+`config/nodes.json` → `policy` governs joins:
+
+- `max_join_balance` (default `0`) caps minted coins on join. With `0`, joiners
+  hold nothing until funded by an existing holder, so the genesis supply is fixed
+  and self-minting is impossible.
+- `allowed_joiners` (default empty = open) restricts which ids may join.
+- A join whose id already belongs to a member is rejected (no takeover), and the
+  self-signature must verify against the embedded key (proves key ownership).
+
+The net property: **coins can only originate from the genesis seed set; every
+other node must be funded by an existing holder.**
 
 ## Performance Considerations
 

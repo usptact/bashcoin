@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Load shared membership helpers (defines NODES_CONFIG, NODES_LEDGER, is_member).
+source /scripts/nodes-lib.sh
+
 NODE_ID=${NODE_ID:-"node1"}
 DATA_DIR="/data"
 LEDGER_DIR="${DATA_DIR}/ledger"
@@ -18,7 +21,7 @@ Usage:
     create-transaction.sh <to_node> <amount>
 
 Arguments:
-    to_node     Destination node (node1, node2, node3, node4, or node5)
+    to_node     Destination node (any current member; see 'consensus.sh stats')
     amount      Amount of coins to send (must be positive number)
 
 Examples:
@@ -55,9 +58,10 @@ if ! [[ "$AMOUNT" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
     exit 1
 fi
 
-# Check if destination node exists
-if [[ ! "$TO_NODE" =~ ^node[1-5]$ ]]; then
-    echo "Error: Invalid destination node. Must be node1-node5"
+# Check that the destination is a known member (seed or runtime-joined).
+if ! is_member "$TO_NODE"; then
+    echo "Error: Unknown destination node '${TO_NODE}'."
+    echo "Known members: $(get_all_node_ids | tr '\n' ' ')"
     exit 1
 fi
 

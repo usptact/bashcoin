@@ -80,8 +80,8 @@ docker-compose restart node2
 
 **Check network connectivity:**
 ```bash
-docker exec -it bashcoin-node1 ping 172.25.0.12
-docker exec -it bashcoin-node1 nc -zv 172.25.0.12 9000
+docker exec -it bashcoin-node1 ping node2
+docker exec -it bashcoin-node1 nc -zv node2 9000
 ```
 
 ### 3. GPG Signature Verification Fails
@@ -190,7 +190,7 @@ docker exec -it bashcoin-node1 ps aux | grep rsync
 
 **Test rsync manually:**
 ```bash
-docker exec -it bashcoin-node1 rsync rsync://172.25.0.12:873/
+docker exec -it bashcoin-node1 rsync rsync://node2:873/
 ```
 
 **Check rsync configuration:**
@@ -285,8 +285,8 @@ docker network inspect bashcoin_bashcoin-network
 
 **Test connectivity between nodes:**
 ```bash
-docker exec -it bashcoin-node1 ping 172.25.0.12
-docker exec -it bashcoin-node1 ping 172.25.0.13
+docker exec -it bashcoin-node1 ping node2
+docker exec -it bashcoin-node1 ping node3
 ```
 
 **Recreate network:**
@@ -357,8 +357,8 @@ docker network ls
 docker network inspect bashcoin_bashcoin-network
 
 # Test connectivity
-docker exec -it bashcoin-node1 ping 172.25.0.12
-docker exec -it bashcoin-node1 nc -zv 172.25.0.12 9000
+docker exec -it bashcoin-node1 ping node2
+docker exec -it bashcoin-node1 nc -zv node2 9000
 ```
 
 ### Monitor Processes
@@ -431,7 +431,7 @@ docker stats
 docker exec -it bashcoin-node1 du -sh /data/ledger/
 
 # Test network speed between nodes
-docker exec -it bashcoin-node1 time rsync -az rsync://172.25.0.12:873/ledger/transactions.jsonl /tmp/test.jsonl
+docker exec -it bashcoin-node1 time rsync -az rsync://node2:873/ledger/transactions.jsonl /tmp/test.jsonl
 ```
 
 ## Preventive Measures

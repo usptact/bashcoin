@@ -39,7 +39,11 @@ bashcoin/
 ├── Dockerfile.ntp              # NTP server image
 ├── Makefile                    # Convenience commands
 │
+├── config/                     # Network membership (single source of truth)
+│   └── nodes.json             # Node ids, IPs, and initial balances
+│
 ├── scripts/                    # All bash scripts
+│   ├── nodes-lib.sh           # Shared membership helpers (sourced by scripts)
 │   ├── entrypoint.sh          # Container initialization
 │   ├── init-node.sh           # Node setup (GPG, ledger, key exchange)
 │   ├── ledger-daemon.sh       # Transaction listener
@@ -47,6 +51,7 @@ bashcoin/
 │   ├── validate-transaction.sh # Validate incoming transactions
 │   ├── broadcast.sh           # Broadcast to all nodes
 │   ├── sync-ledger.sh         # Synchronize ledgers
+│   ├── join-network.sh        # Announce a runtime node-join
 │   └── consensus.sh           # Balance calculation
 │
 └── Documentation/

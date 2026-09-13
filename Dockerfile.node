@@ -12,6 +12,7 @@ RUN apk add --no-cache \
     gnupg \
     openntpd \
     coreutils \
+    bc \
     curl \
     netcat-openbsd \
     socat \
@@ -21,9 +22,14 @@ RUN apk add --no-cache \
 RUN mkdir -p /data/ledger \
     /data/pending \
     /data/keys \
-    /scripts
+    /scripts \
+    /config
+
+# Copy network membership config (single source of truth for the node set)
+COPY config/nodes.json /config/nodes.json
 
 # Copy scripts
+COPY scripts/nodes-lib.sh /scripts/
 COPY scripts/init-node.sh /scripts/
 COPY scripts/ledger-daemon.sh /scripts/
 COPY scripts/create-transaction.sh /scripts/
@@ -31,6 +37,7 @@ COPY scripts/validate-transaction.sh /scripts/
 COPY scripts/sync-ledger.sh /scripts/
 COPY scripts/broadcast.sh /scripts/
 COPY scripts/consensus.sh /scripts/
+COPY scripts/join-network.sh /scripts/
 COPY scripts/fix-ledger.sh /scripts/
 COPY scripts/import-keys.sh /scripts/
 COPY scripts/entrypoint.sh /scripts/

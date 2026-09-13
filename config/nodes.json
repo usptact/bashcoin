@@ -1,0 +1,15 @@
+{
+  "comment": "Seed (genesis) membership for BashCoin. These are the bootstrap nodes and their initial balances; the list is baked into the image and identical on every node. Runtime joiners are NOT listed here -- they announce themselves via node-join ledger records (see join-network.sh) and are discovered from the ledger. 'host' is the peer's DNS name and MUST match the docker-compose service name.",
+  "policy": {
+    "comment": "Admission control for runtime joins. max_join_balance caps the coins a node-join may mint (0 = joiners start with nothing and must be funded by existing holders; keeps the genesis supply fixed). allowed_joiners, if non-empty, restricts which node ids may join.",
+    "max_join_balance": 0,
+    "allowed_joiners": []
+  },
+  "nodes": [
+    { "id": "node1", "host": "node1", "balance": 1000 },
+    { "id": "node2", "host": "node2", "balance": 1000 },
+    { "id": "node3", "host": "node3", "balance": 1000 },
+    { "id": "node4", "host": "node4", "balance": 1000 },
+    { "id": "node5", "host": "node5", "balance": 1000 }
+  ]
+}
